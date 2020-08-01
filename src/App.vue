@@ -97,18 +97,30 @@
             </v-expansion-panel-content>
           </v-expansion-panel>
         </v-expansion-panels>
+
+        <v-row
+          align="center"
+          justify="center"
+          class="pa-4"
+        >
+          <v-btn color="green" @click="runProgram">
+            <v-icon>mdi-play</v-icon> Run
+          </v-btn>
+        </v-row>
+        <v-textarea solo class="monospace" v-model="programOutput" />
       </v-container>
     </v-main>
   </v-app>
 </template>
 
 <script>
-const { ipcRenderer, config } = window;
+const { ipcRenderer, config, spawnProcess } = window;
 
 let vuedata = config.all();
 Object.assign(vuedata, {
   selectedProgram: null,
-  expandedPanels: [0,1]
+  expandedPanels: [0,1],
+  programOutput: ''
 });
 
 export default {
@@ -145,6 +157,28 @@ export default {
     },
     close: function() {
       ipcRenderer.sendSync('closewin')
+    },
+    runProgram: function() {
+      this.programOutput = '';
+      const prog = this.programs[this.selectedProgram];
+      let proc;
+
+      if (prog.openwith) {
+        proc = spawnProcess("cmd.exe", [
+            "/c",          // Argument for cmd.exe to carry out the specified script
+            prog.openwith,
+            prog.path,
+        ]);
+      } else {
+        proc = spawnProcess("cmd.exe", [
+            "/c",          // Argument for cmd.exe to carry out the specified script
+            prog.path,
+        ]);
+      }
+
+      proc.stdout.on("data", (data) => {
+        this.programOutput += data;
+      });
     },
   }
 };
