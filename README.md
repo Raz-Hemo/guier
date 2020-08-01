@@ -1,4 +1,5 @@
 # guier
+Turns argparse-style command line tools to GUI tools.
 
 ## Project setup
 ```
