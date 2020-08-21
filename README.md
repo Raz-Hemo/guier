@@ -1,6 +1,8 @@
 # guier
 Turns argparse-style command line tools to GUI tools.
 
+![Overview](example.png)
+
 ## Project setup
 ```
 yarn install
