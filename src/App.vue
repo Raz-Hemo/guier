@@ -77,23 +77,47 @@
               <v-text-field
                 label="Title"
                 v-model="programs[selectedProgram].title"
-                @change="setTitle(selectedProgram, programs[selectedProgram].title)"
+                @change="updateConfig()"
               />
               <v-text-field
                 label="Path"
                 v-model="programs[selectedProgram].path"
-                @change="setPath(selectedProgram, programs[selectedProgram].path)"
+                @change="updateConfig()"
               />
               <v-text-field
                 label="Open with"
                 v-model="programs[selectedProgram].openwith"
-                @change="setOpenWith(selectedProgram, programs[selectedProgram].openwith)"
+                @change="updateConfig()"
               />
             </v-expansion-panel-content>
           </v-expansion-panel>
           <v-expansion-panel>
             <v-expansion-panel-header>Arguments</v-expansion-panel-header>
             <v-expansion-panel-content>
+              <v-switch
+                v-for="(item, k) in programs[selectedProgram].opts"
+                :key="k"
+                v-model="programs[selectedProgram].opts[k]"
+                :label="k"
+                class= "px-4"
+                @change="updateConfig()"
+              ></v-switch>
+              <v-text-field
+                v-for="(item, k) in programs[selectedProgram].reqvals"
+                :key="k"
+                :label="k"
+                v-model="programs[selectedProgram].reqvals[k]"
+                class= "px-4"
+                @change="updateConfig()"
+              />
+              <v-text-field
+                v-for="(item, k) in programs[selectedProgram].optvals"
+                :key="k"
+                :label="k"
+                v-model="programs[selectedProgram].optvals[k]"
+                class= "px-4"
+                @change="updateConfig()"
+              />
             </v-expansion-panel-content>
           </v-expansion-panel>
         </v-expansion-panels>
@@ -106,8 +130,11 @@
           <v-btn color="green" @click="runProgram">
             <v-icon>mdi-play</v-icon> Run
           </v-btn>
+          <v-btn color="green" @click="refreshArgs" class="mx-4">
+            <v-icon>mdi-refresh</v-icon> Refresh Args
+          </v-btn>
         </v-row>
-        <v-textarea solo class="monospace" v-model="programOutput" />
+        <v-textarea disabled solo class="monospace" v-model="programOutput" />
       </v-container>
     </v-main>
   </v-app>
@@ -120,7 +147,7 @@ let vuedata = config.all();
 Object.assign(vuedata, {
   selectedProgram: null,
   expandedPanels: [0,1],
-  programOutput: ''
+  programOutput: '',
 });
 
 export default {
@@ -136,18 +163,12 @@ export default {
       this.selectedProgram = null;
     },
     addProgram: function() {
-      this.programs.push({title: 'New Program', openwith: '', path: ''});
+      this.programs.push({title: 'New Program', openwith: '', path: '', opts: {}, optvals: {}, reqvals: {}});
       config.set('programs', this.programs);
       this.selectedProgram = this.programs.length - 1;
     },
-    setTitle: function(i, v) {
-      config.set(`programs[${i}].title`, v);
-    },
-    setOpenWith: function(i, v) {
-      config.set(`programs[${i}].openwith`, v);
-    },
-    setPath: function(i, v) {
-      config.set(`programs[${i}].path`, v);
+    updateConfig: function() {
+      config.set('programs', this.programs);
     },
     minimize: function() {
       ipcRenderer.sendSync('minimize')
@@ -158,27 +179,79 @@ export default {
     close: function() {
       ipcRenderer.sendSync('closewin')
     },
-    runProgram: function() {
-      this.programOutput = '';
+    refreshArgs: function() {
       const prog = this.programs[this.selectedProgram];
-      let proc;
+      const proc = this.runProgramInner(true);
+      let testedOutput = '';
+      proc.stdout.on("data", (data) => {
+        testedOutput += data;
+      });
+      proc.stderr.on("data", (data) => {
+        testedOutput += data;
+      });
 
-      if (prog.openwith) {
-        proc = spawnProcess("cmd.exe", [
-            "/c",          // Argument for cmd.exe to carry out the specified script
-            prog.openwith,
-            prog.path,
-        ]);
-      } else {
-        proc = spawnProcess("cmd.exe", [
-            "/c",          // Argument for cmd.exe to carry out the specified script
-            prog.path,
-        ]);
-      }
+      proc.on("close", (code) => {
+        code;
+        // usage line
+        const match = testedOutput.match(/usage: \S+ \[-h\] (\[--\S+ \S+\] ?|\[--\S+?\] ?|--\S+ \S+ ?|--\S+ \S+ ?)+/g)[0];
+        // optional value arg -> optional textfield
+        prog.optvals = {};
+        for (const m of match.matchAll(/\[--(\S+) \S+\]\s?/g)) {
+          prog.optvals[m[1]] = '';
+        }
 
+        // optional arg -> checkbox
+        prog.opts = {};
+        for (const m of match.matchAll(/\[--(\S+?)\]\s?/g)) {
+          prog.opts[m[1]] = false;
+        }
+
+        // required value arg -> required text field
+        prog.reqvals = {};
+        for (const m of match.matchAll(/[^[]--(\S+) \S+[^\]]\s?/g)) {
+          prog.reqvals[m[1]] = '';
+        }
+        this.testedOutput = '';
+      });
+    },
+    runProgram: function() {
+      const proc = this.runProgramInner(false);
       proc.stdout.on("data", (data) => {
         this.programOutput += data;
       });
+      proc.stderr.on("data", (data) => {
+        this.programOutput += data;
+      });
+    },
+    runProgramInner: function(showHelp) {
+      this.programOutput = '';
+      const prog = this.programs[this.selectedProgram];
+
+      let args = ["/c"];
+      if (prog.openwith) {
+        args.push(prog.openwith);
+      }
+      args.push(prog.path);
+      if (showHelp) {
+        args.push("-h");
+      } else {
+        for (const opt of Object.keys(prog.opts)) {
+          if (prog.opts[opt]) {
+            args.push(`--${opt}`);
+          }
+        }
+        for (const reqval of Object.keys(prog.reqvals)) {
+          args.push(`--${reqval}`);
+          args.push(prog.reqvals[reqval]);
+        }
+        for (const optval of Object.keys(prog.optvals)) {
+          if (prog.optvals[optval] !== '') {
+            args.push(`--${optval}`);
+            args.push(prog.optvals[optval]);
+          }
+        }
+      }
+      return spawnProcess("cmd.exe", args);
     },
   }
 };

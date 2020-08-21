@@ -46,17 +46,17 @@ function createWindow() {
   })
 }
 
-ipcMain.on('minimize', (event, arg) => {
+ipcMain.on('minimize', (event) => {
   win.minimize()
   event.returnValue = true
 })
 
-ipcMain.on('maximize', (event, arg) => {
+ipcMain.on('maximize', (event) => {
   win.isMaximized() ? win.unmaximize() : win.maximize()
   event.returnValue = true
 })
 
-ipcMain.on('closewin', (event, arg) => {
+ipcMain.on('closewin', (event) => {
   win.destroy()
   event.returnValue = true
 })
